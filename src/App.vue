@@ -54,8 +54,8 @@ export default {
 
 <style scoped>
 #main {
-    width: 80%;
-    height: 80%;
+    width: 100%;
+    height: 100%;
     border: gainsboro solid 1px;
     background-color: white;
     display: flex;
