@@ -7,12 +7,13 @@
         </div>
         <div class="main_table">
             <el-table
+                border
                 :data="tableData"
                 style="width: 80%; margin: 12% auto;">
                 <el-table-column
-                    prop="id"
+                    prop="tag"
                     label="id"
-                    width="180">
+                    width="360">
                 </el-table-column>
                 <el-table-column
                     prop="shelve"
@@ -37,19 +38,15 @@ export default {
     data () {
         return {
             check_id: '',
-            tableData: [
-                {
-                    id: '123',
-                    shelve: '123',
-                    position: '123',
-                    num: '123'
-                }
-            ]
+            tableData: []
         }
     },
     methods: {
         submit () {
-            
+            this.$axios.get('http://localhost:3001/goods/' + this.check_id).then(res => {
+                if(res.data) this.tableData = [ res.data ]
+                else this.tableData = []
+            })
         }
     }
 }
