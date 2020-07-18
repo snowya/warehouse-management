@@ -22,7 +22,7 @@
                     width="360">
                 </el-table-column>
                 <el-table-column
-                    prop="buy"
+                    prop="num"
                     label="购买数量">
                 </el-table-column>
                 <el-table-column
@@ -39,9 +39,22 @@
                 </el-table-column>
             </el-table>
         </div>
-        <el-button v-if="tableData.length !== 0" type="primary" class="submit_button" @click="submit">
-            下一个订单
-        </el-button>
+        <div class="submit_button" >
+            <el-upload
+                action=""
+                :on-change="importOrder"
+                class="upload-demo"
+                accept=".xlsx,.xls,.csv,.xml"
+                :auto-upload="false"
+                :show-file-list="false"
+                ref="upload"
+                :limit="1">
+                <el-button type="primary">导入订单</el-button>
+            </el-upload>
+            <el-button style="margin-left: 20px" v-if="tableData.length !== 0" type="primary" @click="submit">
+                下一个订单
+            </el-button>
+        </div>
     </div>
 </template>
 
@@ -50,38 +63,31 @@ export default {
     data () {
         return {
             check_id: '',
-            order: [
-                {
-                    orderId: '1',
-                    tag: '4a507db7-7c52-2c22-d6a6-77ade48625bd',
-                    buy: 1
-                },
-                {
-                    orderId: '1',
-                    tag: '33783757-e89e-3262-f0a4-e9db956ca1c3',
-                    buy: 2
-                },
-                {
-                    orderId: '1',
-                    tag: '8422024f-cfbc-9309-d884-07db3221fbec',
-                    buy: 2
-                }
-            ],
-            tableData: []
-        }
-    },
-    async created () {
-        this.tableData = Array.from(this.order)
-        for(let item of this.tableData) {
-            await this.$axios.get('http://localhost:3001/goods/' + item.tag).then(res => {
-                this.$set(item, 'shelve', res.data.shelve)
-                this.$set(item, 'position', res.data.position)
-                this.$set(item, 'num', res.data.num)
-                this.$set(item, 'if_pick', '否')
-            })
+            tableData: [],
+            arr: [],
+            spanArr: [],
+            pos: 0
         }
     },
     methods: {
+        updateTable () {
+            for(let item of this.arr) {
+                this.$axios.get('http://localhost:3001/goods/' + item.tag).then(res => {
+                    this.$set(item, 'shelve', res.data.shelve)
+                    this.$set(item, 'position', res.data.position)
+                    this.$set(item, 'num', res.data.num)
+                    this.$set(item, 'if_pick', '否')
+                })
+            }
+            this.arr.sort((a, b) => {
+                return a.shelve > b.shelve ? 1 : -1
+            }).sort((a, b) => {
+                return a.orderId > b.orderId ? 1 : -1
+            })
+            let temp = this.arr.splice(0, 5)
+            this.getSpanArr(temp)
+            this.tableData = temp
+        },
         pickSubmit () {
             for(let item of this.tableData) {
                 if(item.tag === this.check_id) {
@@ -95,17 +101,30 @@ export default {
         },
         dataProxy({ row, column, rowIndex, columnIndex }) {
             if (columnIndex === 0) {
-                if (rowIndex % 5 === 0) {
-                    return {
-                        rowspan: 3,
-                        colspan: 1
-                    };
-                } else {
-                    return {
-                        rowspan: 0,
-                        colspan: 0
-                    };
-                }
+                const _row = this.spanArr[rowIndex];
+                const _col = _row > 0 ? 1 : 0;
+                return {
+                    rowspan: _row,
+                    colspan: _col
+                }
+            }
+        },
+        getSpanArr(data) {
+            this.spanArr = []
+            for (let i = 0; i < data.length; i++) {
+                if (i === 0) {
+                    this.spanArr.push(1);
+                    this.pos = 0
+                } else {
+                    // 判断当前元素与上一个元素是否相同
+                    if (data[i].orderId === data[i - 1].orderId) {
+                        this.spanArr[this.pos] += 1;
+                        this.spanArr.push(0);
+                    } else {
+                        this.spanArr.push(1);
+                        this.pos = i;
+                    }
+               }
             }
         },
         submit () {
@@ -119,7 +138,109 @@ export default {
                 });
                 return
             }
-            this.tableData = []
+            this.next()
+        },
+        next () {
+            let temp = this.arr.splice(0, 5)
+            this.getSpanArr(temp)
+            this.tableData = temp
+            console.log(temp)
+        },
+        // excel表上传
+        importOrder(file, fileList){
+            // 判断上传文件格式
+            let fileTemp = file.raw
+            if(fileTemp){
+                if((fileTemp.type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') || (fileTemp.type == 'application/vnd.ms-excel')){
+                    this.importExcel(fileTemp)
+                } else if(fileTemp.type === 'text/xml') {
+                    this.jsonToXml(fileTemp)
+                }
+                this.$refs.upload.clearFiles();
+            }
+        },
+        uploadOrder () {
+            this.$axios.post('http://localhost:3001/orders', { orders: this.arr }).then(res => {
+                this.$message({
+                    type:'success',
+                    message:'订单导入成功'
+                })
+            })
+            this.updateTable()
+        },
+        importExcel(file) {
+            var rABS = false; //是否将文件读取为二进制字符串
+            var reader = new FileReader()
+            FileReader.prototype.readAsBinaryString = (f) => {
+                var binary = "";
+                var rABS = false; //是否将文件读取为二进制字符串
+                var wb; //读取完成的数据
+                var outdata;
+                var reader = new FileReader();
+                reader.onload = (e) => {
+                    var bytes = new Uint8Array(reader.result);
+                    var length = bytes.byteLength;
+                    for(var i = 0; i < length; i++) {
+                        binary += String.fromCharCode(bytes[i]);
+                    }
+                    var XLSX = require('xlsx');
+                    if(rABS) {
+                        wb = XLSX.read(btoa(fixdata(binary)), { //手动转化
+                            type: 'base64'
+                        });
+                    } else {
+                        wb = XLSX.read(binary, {
+                            type: 'binary'
+                        });
+                    }
+                    outdata = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);//outdata就是读取excel内容之后输出的东西
+                    for(let i=0; i<outdata.length; i++) {
+                        let temp = {}
+                        temp.orderId = outdata[i]['订单id']
+                        temp.tag = outdata[i]['订购产品ID']
+                        temp.num = outdata[i]['订购数量']
+                        if(!temp.orderId) temp.orderId = this.arr[i-1].orderId
+                        this.arr.push(temp)
+                    }
+                    this.uploadOrder()
+                }
+                reader.readAsArrayBuffer(f)
+            }
+            if(rABS) {
+                reader.readAsArrayBuffer(file);
+            } else {
+                reader.readAsBinaryString(file);
+            }
+        },
+        jsonToXml (file) {
+            let reader = new FileReader()
+            reader.readAsText(file)
+            reader.onload = (f) => {
+                let doc = this.toXML(f.target.result),
+                    el = doc.getElementsByTagName("order")
+                for (let i = 0; i < el.length; i++) {
+                    let id = el[i].getElementsByTagName("orderId")[0].firstChild.nodeValue
+                    let goods = el[i].getElementsByTagName("goods")
+                    for(let j=0; j<goods.length; j++) {
+                        let goodsTag = goods[j].getElementsByTagName("goodsId")[0].firstChild.nodeValue
+                        let goodsNum = goods[j].getElementsByTagName("goodsNum")[0].firstChild.nodeValue
+                        this.arr.push({orderId: id, tag: goodsTag, num: goodsNum})
+                    }
+                }
+                this.uploadOrder()
+            }
+        },
+        toXML(strxml){
+            let xmlDoc
+            try{ 
+                xmlDoc = new ActiveXObject("Microsoft.XMLDOM")
+                xmlDoc.loadXML(strxml); 
+            } 
+            catch(e){ 
+                var oParser=new DOMParser(); 
+                xmlDoc=oParser.parseFromString(strxml,"text/xml")
+            } 
+            return xmlDoc
         }
     }
 }
@@ -155,6 +276,8 @@ export default {
 }
 
 .submit_button {
+    display: flex;
+    flex-direction: row;
     align-self: center;
     position: absolute;
     bottom: 80px;
